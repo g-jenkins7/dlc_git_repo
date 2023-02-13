@@ -573,31 +573,6 @@ def get_trial_frames(all_data,all_onsets,all_frame_times,period):
         
     return  all_data, mismatched_files
 
-def get_succ_trial_end(data,traj_part,trial_no,extra_time):
-
-    lx = data.box_norm_medians['l_foodmag_x']
-    ly = data.box_norm_medians['l_foodmag_y']
-    ry = data.box_norm_medians['r_foodmag_y']
-    rx = data.box_norm_medians['r_foodmag_x']
-    roi_lx = lx - (np.diff([lx,rx])[0]/2)
-    roi_ly = ly- (np.diff([lx,rx])[0]/2)
-    roi_x_range = [roi_lx, roi_lx +  np.diff([lx,rx])[0]*2]
-    roi_y_range = [roi_ly,roi_ly + np.diff([roi_ly,ly])[0]]
-    
-    trial = data.dlc_data_norm[ data.trial_start_frames.iloc[trial_no]: data.trial_end_frames.iloc[trial_no]+100]
-    traj_data = trial[traj_part]
-    in_roi = traj_data.query('x > @roi_x_range[0] and x < @roi_x_range[1] and y > @roi_y_range[0] and y < @roi_y_range[1]' )
-    succ_time = data.trial_succ_times_frames.iloc[trial_no]
-    if in_roi.empty: #if they dont make to food mag within time period just do same as for fail trials
-        succ_tracking = data.dlc_data[ data.trial_start_frames.iloc[trial_no]: data.trial_end_frames.iloc[trial_no]]
-        succ_tracking_norm = data.dlc_data_norm[ data.trial_start_frames.iloc[trial_no]: data.trial_end_frames.iloc[trial_no]]
-        succ_tracking_scaled = data.dlc_data_scaled[ data.trial_start_frames.iloc[trial_no]: data.trial_end_frames.iloc[trial_no]]
-    else:
-        first_mag_entry = in_roi[in_roi.index > succ_time[0]].iloc[0].name
-        succ_tracking = data.dlc_data[ data.trial_start_frames.iloc[trial_no]: first_mag_entry + int(extra_time)]
-        succ_tracking_norm = data.dlc_data_norm[ data.trial_start_frames.iloc[trial_no]: first_mag_entry + int(extra_time)]
-        succ_tracking_scaled = data.dlc_data_scaled[ data.trial_start_frames.iloc[trial_no]: first_mag_entry + int(extra_time)]
-    return succ_tracking, succ_tracking_norm, succ_tracking_scaled
 
 
 def get_distances(all_data,avg_all_norm_medians):
@@ -623,20 +598,45 @@ def get_distances(all_data,avg_all_norm_medians):
     return distances
     
        
-def normalise_and_track(all_data,traj_part,succ_extra_time,all_frame_times,excluded_files,restrict_traj = True):
+def scale_dlc_data(D, traj_part, distances):
     """
-    normalises dlc data to poke location 
-    
-    splits dlc data into trials 
+    scale dlc tracking data 
 
     Parameters
     ----------
-    all_data : TYPE Dict
-        DESCRIPTION. contains DLC_data_strucs for each session
+    D : DLC data class
+        DESCRIPTION.
+    traj_part : TYPE
+        DESCRIPTION.
+    distances : df
+        box feature distances for scaling traj .
 
     Returns
     -------
-    all_data : - updated to include .dlc_data_norm, .track_by_trial, .track_by_trial_norm 
+    dlc_data_scaled : df
+        dflc_nrom data for D scaled.
+
+    """
+    dlc_data_scaled = D.dlc_data_norm.copy()
+    dlc_data_scaled.loc[:,(traj_part,'x')] = (D.dlc_data_norm['head']['x'] * distances.query('files == @D.tag').scale_factor_x[0])
+    dlc_data_scaled.loc[:,(traj_part,'y')] = (D.dlc_data_norm['head']['y'] * distances.query('files == @D.tag').scale_factor_y[0])
+    return dlc_data_scaled
+
+def get_medians(D, norm= False):
+    """
+    calculation median x,y coordinates from box features
+
+    Parameters
+    ----------
+    D : DLC data class
+        DESCRIPTION.
+    norm : bool, optional
+        calc from nomalized datae
+
+    Returns
+    -------
+    medians : df
+        box feature median coordinates.
 
     """
     box_features = [
@@ -648,72 +648,250 @@ def normalise_and_track(all_data,traj_part,succ_extra_time,all_frame_times,exclu
         'boxtopleft',
         'boxtopright',
         'boxbottomleft',
-        'boxbottomright']
-    for tag in all_data.keys():
-        if tag not in excluded_files:
-            print(tag)
-    # get median of box features across trials 
-            medians = {}
-            frame_time_in_sec = 0.04# = float(all_frame_times[tag][1])
-            print(frame_time_in_sec)
-            extra_time = np.floor(succ_extra_time/frame_time_in_sec)
-            for part in box_features:
-                medians[part + '_x'] = all_data[tag].dlc_data[part].x.median()
-                medians[part + '_y'] = all_data[tag].dlc_data[part].y.median()
-            all_data[tag].box_medians = medians
-    
-            dlc_data_norm = all_data[tag].dlc_data.copy()
-            for part in all_data[tag].bodyparts:
-                 dlc_data_norm.loc[:,(part,'x')]=  all_data[tag].dlc_data[part].x - medians['poke_x']
-                 dlc_data_norm.loc[:,(part,'y')]=  all_data[tag].dlc_data[part].y - medians['poke_y']
-            
+        'boxbottomright']  
+    medians = {}
+    if norm == True:
+        for part in box_features:
+            medians[part + '_x'] = D.dlc_data_norm[part].x.median()
+            medians[part + '_y'] = D.dlc_data_norm[part].y.median()
+    else:
+        for part in box_features:
+            medians[part + '_x'] = D.dlc_data[part].x.median()
+            medians[part + '_y'] = D.dlc_data[part].y.median()
+    return medians
 
-            norm_medians = {}
-            for part in box_features:
-                norm_medians[part + '_x'] = dlc_data_norm[part].x.median()
-                norm_medians[part + '_y'] = dlc_data_norm[part].y.median()
-            all_data[tag].box_norm_medians = norm_medians
-            
-            all_avg_norm_medians = get_avg_norm_medians(all_data)
-            distances = get_distances(all_data,all_avg_norm_medians)
-            dlc_data_scaled = dlc_data_norm.copy()
-            dlc_data_scaled.loc[:,(traj_part,'x')] = (dlc_data_norm['head']['x'] * distances.loc[distances['files'] == tag].scale_factor_x[0])
-            dlc_data_scaled.loc[:,(traj_part,'y')] = (dlc_data_norm['head']['y'] * distances.loc[distances['files'] == tag].scale_factor_y[0])
+def normalise_dlc_data(D):
+    """
+    normalisaes dlc_data by subtracint nosepoke coordinates
+
+    Parameters
+    ----------
+    D : DLC data class
+
+    Returns
+    -------
+    norm_data : df
+        
+
+    """
+    norm_data = D.dlc_data.copy()
+    for part in D.bodyparts:
+        norm_data.loc[:,(part,'x')]=  D.dlc_data[part].x - D.box_medians['poke_x']
+        norm_data.loc[:,(part,'y')]=  D.dlc_data[part].y - D.box_medians['poke_y']
+    setattr(D,'dlc_data_norm',norm_data)
+    return norm_data
+
+
+
+def restrict_trajectories(D, data, traj_part): 
+    """
+    restricts trackign data to no futher on y axis than food magazine
+
+    Parameters
+    ----------
+    D : DLC data class
+        .
+    data : df
+        dlc tracking data attrtibute of D . 
+     traj_part : str
+         body part to track.
+
+    Returns
+    -------
+    data : df
+        dlc tracking data now restricted.
+
+    """
+    # SET ANY YVLAS PAST THE FOOD MAG TO THE same y as the food mag
+    trajy = data[traj_part].y.copy()
+    trajy[trajy < 0] = 0
+    trajy[trajy > (D.box_norm_medians['r_foodmag_y'] + 
+                   D.box_norm_medians['l_foodmag_y'])/2 ] = (D.box_norm_medians['r_foodmag_y'] +
+                                                       D.box_norm_medians['l_foodmag_y'])/2
+    data.loc[:,(traj_part,'y')] = trajy
+    return data
+                                         
+def track_trials(D, data, traj_part, extra_time):
+    """
+    breaks tracking data into trials 
+
+    Parameters
+    ----------
+    D : DLC data class
+        .
+    data : df
+        dlc tracking data attrtibute of D . 
+        eg "dlc_data_scaled" or "dlc_data_norm"
+    extra_time : float
+        time in s after succesful trial med event to track for..
+
+    Returns
+    -------
+    tracked_trials. dict
+    
+
+    """
+
+    tracked_trials  ={}
+    for trial_no in range(0,len(D.trial_start_frames)):
+        print(trial_no)
+        if D.trial_start_frames.iloc[trial_no] < data.index[-1]:
+            if D.trial_succ_times_med.empty or pd.isnull(D.trial_succ_times_med.iloc[trial_no])[0]:              #if failed trial 
+                tracked_trials[trial_no] = data[D.trial_start_frames.iloc[trial_no]: 
+                                               D.trial_end_frames.iloc[trial_no]]
+               # print(tracked_trials)
+            else:
+                trial_succ_tracking = get_succ_trial_end(D, data,  
+                                                         trial_no, 
+                                                         traj_part, extra_time)
+                tracked_trials[trial_no] = trial_succ_tracking
+    return tracked_trials
+  
+def get_succ_trial_end(D, data,trial_no, traj_part, extra_time):
+    """
+    select when to stop tracking on successful trials. 
+    Either as defined by "extra time" if they enter the food mag roi in that time
+    or the same as a failed trial if not 
+
+    Parameters
+    ----------
+    D : DLC data class
+        .
+    data : df
+        dlc tracking data attrtibute of D . 
+        eg "dlc_data_scaled" or "dlc_data_norm"
+    traj_part : str
+        body part to track.
+    trial_no : int
+    .
+    extra_time : float
+        time in s after succesful trial med event to track for..
+    Returns
+    -------
+    succ_tracking : df
+        subset of data df for this trial .
+
+    """
+    #define ROI around food mag
+    print('succ')
+    lx = D.box_norm_medians['l_foodmag_x']
+    ly = D.box_norm_medians['l_foodmag_y']
+    ry = D.box_norm_medians['r_foodmag_y']
+    rx = D.box_norm_medians['r_foodmag_x']
+    
+    roi_lx = lx - (np.diff([lx,rx])[0]/2)
+    roi_ly = ly- (np.diff([lx,rx])[0]/2)
+    roi_x_range = [roi_lx, roi_lx +  np.diff([lx,rx])[0]*2]
+    roi_y_range = [roi_ly,roi_ly + np.diff([roi_ly,ly])[0]]
+    
+    trial_data = data[D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]+100][traj_part]
+    in_roi = trial_data.query('x > @roi_x_range[0] and x < @roi_x_range[1] and y > @roi_y_range[0] and y < @roi_y_range[1]' )
+    succ_time = D.trial_succ_times_frames.iloc[trial_no]
+    if in_roi.empty: #if they dont make to food mag within time period just do same as for fail trials
+        succ_tracking = data[ D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]]
+    else:
+        first_mag_entry = in_roi[in_roi.index > succ_time[0]]# .iloc[0].name
+        if first_mag_entry.empty:
+            succ_tracking = data[ D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]]
+        else:
+            succ_tracking = data[D.trial_start_frames.iloc[trial_no]: first_mag_entry.iloc[0].name + int(extra_time)]
+        
+    return succ_tracking
+
+def normalise_and_scale(all_data,all_frame_times,excluded_files):
+    """
+    parent function - normalises dlc data, scales and calcs
+
+    Parameters
+    ----------
+    all_data : dict
+        dict of dlc data structs.
+    all_frame_times : dict
+        dict of frame times.
+    excluded_files : list 
+        list of files to be excluded from analysis.
+
+    Returns
+    -------
+   all_data : dict
+       dict of dlc data struct - updated with info
+    distances : df
+        box feature distances for scaling traj .
+
+    """
+    
+    for tag in all_data.keys():
+        #if tag not in excluded_files:
+        # get median of box features across trials 
+        #N frames after succ to track succ trials 
+        print(tag)
+        box_medians = get_medians(all_data[tag]) # get medians for box features 
+        setattr(all_data[tag], 'box_medians', box_medians)
+        
+        dlc_data_norm = normalise_dlc_data(all_data[tag]) # subtract poke median to normalise data
+        setattr(all_data[tag], 'dlc_data_norm', dlc_data_norm)
+        
+        box_norm_medians = get_medians(all_data[tag], norm = True) #get medians of normalised data 
+        setattr(all_data[tag], 'box_norm_medians', box_norm_medians)
+        
+    all_avg_norm_medians = get_avg_norm_medians(all_data) # avg medians for plotting     
+    distances = get_distances(all_data,all_avg_norm_medians)
+    
+    return all_data,distances
+
+def track_all(all_data ,excluded_files,distances, succ_extra_time = 0.75, traj_part = 'head', restrict_traj = True):
+    """
+    parent function for scaling trajectories and tracking each trial 
+    
+    Parameters
+    ----------
+    all_data : dict
+        dict of dlc data structs.
+   excluded_files : list 
+       list of files to be excluded from analysis.
+    distances : df
+         box feature distances for scaling traj .
+    traj_part : stR, optional
+        body part to track . default is head
+    succ_extra_time : float, optional
+        time in s after succesful trial med event to track for.
+             default is 0.75s
+    restrict_traj : BOOL, optional
+        restrict traj up to food mag in y direction.
+        The default is True.
+
+    Returns
+    -------
+    all_data : dict
+        dict of dlc data struct - updated with info
+
+    """
+    frame_time_in_sec = 0.04# = float(all_frame_times[tag][1])
+    extra_time = np.floor(succ_extra_time/frame_time_in_sec)
+    for tag in all_data.keys():
+        if tag not in excluded_files and tag != 'rat01_14_sal' and tag != 'rat01_14_sal':
+            print(tag)
+            dlc_data_scaled = scale_dlc_data(all_data[tag], traj_part, distances)
+            setattr(all_data[tag], 'dlc_data_scaled', dlc_data_scaled)
 
             if restrict_traj:
-                trajy = dlc_data_norm[traj_part].y.copy()
-                trajy[trajy < 0] = 0
-                trajy[trajy > (norm_medians['r_foodmag_y'] + norm_medians['l_foodmag_y'])/2 ] = (norm_medians['r_foodmag_y'] + norm_medians['l_foodmag_y'])/2
-                dlc_data_norm.loc[:,(traj_part,'y')] = trajy
-                
-                scaled_trajy = dlc_data_scaled[traj_part].y.copy()
-                scaled_trajy[scaled_trajy < 0] = 0
-                scaled_trajy[scaled_trajy > (norm_medians['r_foodmag_y'] + norm_medians['l_foodmag_y'])/2 ] = (norm_medians['r_foodmag_y'] + norm_medians['l_foodmag_y'])/2
-                dlc_data_scaled.loc[:,(traj_part,'y')] = scaled_trajy
+                all_data[tag].dlc_data_norm = restrict_trajectories(all_data[tag], all_data[tag].dlc_data_norm, traj_part)  
+                all_data[tag].dlc_data_scaled = restrict_trajectories(all_data[tag], all_data[tag].dlc_data_scaled, traj_part)   
+            
+            
+            track_by_trial =  track_trials(all_data[tag], all_data[tag].dlc_data, 
+                                           traj_part, extra_time)  
+            setattr(all_data[tag], 'track_by_trial', track_by_trial)
+            track_by_trial_norm = track_trials(all_data[tag], all_data[tag].dlc_data_norm, 
+                                               traj_part, extra_time) 
+            setattr(all_data[tag], 'track_by_trial_norm', track_by_trial_norm)
+            track_by_trial_scaled = track_trials(all_data[tag], all_data[tag].dlc_data_scaled,
+                                                 traj_part, extra_time)
+            setattr(all_data[tag], 'track_by_trial_scaled', track_by_trial_scaled)
 
-                
-                
-            all_data[tag].dlc_data_norm = dlc_data_norm 
-            all_data[tag].dlc_data_scaled = dlc_data_scaled 
-
-            track_by_trial ={}
-            track_by_trial_norm ={}
-            track_by_trial_scaled = {}
-            for t in range(0,len(all_data[tag].trial_start_frames)):
-                if all_data[tag].trial_start_frames.iloc[t] < all_data[tag].dlc_data_norm.index[-1]:
-                    if pd.isnull(all_data[tag].trial_succ_times_med.iloc[t])[0]:
-                        track_by_trial[t] = all_data[tag].dlc_data[all_data[tag].trial_start_frames.iloc[t]: all_data[tag].trial_end_frames.iloc[t]]
-                        track_by_trial_norm[t] = all_data[tag].dlc_data_norm[ all_data[tag].trial_start_frames.iloc[t]: all_data[tag].trial_end_frames.iloc[t]]
-                        track_by_trial_scaled[t] = all_data[tag].dlc_data_scaled[ all_data[tag].trial_start_frames.iloc[t]: all_data[tag].trial_end_frames.iloc[t]]
-                    else:
-                        trial_succ_tracking, trial_succ_tracking_norm ,trial_succ_tracking_scaled = get_succ_trial_end(all_data[tag],traj_part,t,extra_time)
-                        track_by_trial[t] = trial_succ_tracking
-                        track_by_trial_norm[t] = trial_succ_tracking_norm
-                        track_by_trial_scaled[t] =trial_succ_tracking_scaled
-            all_data[tag].track_by_trial = track_by_trial
-            all_data[tag].track_by_trial_norm = track_by_trial_norm
-            all_data[tag].track_by_trial_scaled = track_by_trial_scaled
     return all_data
+        
+        
         
         
         

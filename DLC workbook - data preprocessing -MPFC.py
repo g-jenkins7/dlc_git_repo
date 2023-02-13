@@ -85,8 +85,6 @@ elif preprocess_data == 'y':
     mpfc_all_data = pickle.load(open (data_path + 'all_data_' + 
                                experiment +
                                '.p', 'rb'))
-    
-#%% 
 
 
 #%% VIDEO PROCESSING - ffmpeg timeframe exdtraction and avg brightness data
@@ -126,15 +124,6 @@ else:
     print(frame_rate_test.loc[frame_rate_test['avg'] != 0.04])
     unstable_frame_rate_files = list(frame_rate_test.loc[frame_rate_test['avg']  !=  0.04].index)
     
-#%%
-# stable_fr_files= [x for x in  frame_rate_test.index if f not in unstable_frame_rate_files]                
-# stable_fr_len = []
-# for f in stable_fr_files:
-#     stable_fr_len.append(len(all_frame_times[f]))
-#     print(float(all_frame_times[f][-1])/60)
-
-for k in mpfc_all_data.keys():
-    print(mpfc_all_data[k].dlc_data)
 
 
 #%% interpolate DLC data, find brightness peaks from the video - align to MED-file errors and convert MED events into frames
@@ -152,10 +141,13 @@ for k in excluded_vids:
         all_frame_times.pop(k)
     if k in all_avg_brightness.keys():
         all_avg_brightness.pop(k)
-#%%
-mpfc_all_data = {(k +'i' if 'bm' in k else k): v for (k,v) in mpfc_all_data.items()}
-test = {(k): v for (k,v) in mpfc_all_data.items() if 'rat02_03_sal' in k}
 
+mpfc_all_data = {(k +'i' if 'bm' in k else k): v for (k,v) in mpfc_all_data.items()}
+
+for tag in mpfc_all_data.keys():
+    setattr(mpfc_all_data[tag], 'tag', tag)
+            
+            
 
 #%%
 for tag in mpfc_all_data.keys():
@@ -204,163 +196,11 @@ if preprocess_data == 'y':
     #all_mismatched_files = all_mismatched_files + unstable_frame_rate_files
 
 #%%
-mismatch_list = []
-plot_peaks = 'y'
-get_peaks(all_frame_times,all_avg_brightness, all_data, plot_peaks, 'rat01_18_bmi', mismatch_list, check_err = False)
-#%%
-for tag in mpfc_all_data.keys():
-    setattr(mpfc_all_data[tag], 'tag', tag)
-            
-            
-            
-            #%%
-def scale_dlc_data(D, traj_part, distances):
-    dlc_data_scaled = D.dlc_data_norm.copy()
-    dlc_data_scaled.loc[:,(traj_part,'x')] = (D.dlc_data_norm['head']['x'] * distances.query('files == @D.tag').scale_factor_x[0])
-    dlc_data_scaled.loc[:,(traj_part,'y')] = (D.dlc_data_norm['head']['y'] * distances.query('files == @D.tag').scale_factor_y[0])
-    return dlc_data_scaled
-def get_medians(D, norm= False):
-    box_features = [
-        'poke',
-        'l_lever',
-        'r_lever',
-        'l_foodmag',
-        'r_foodmag',
-        'boxtopleft',
-        'boxtopright',
-        'boxbottomleft',
-        'boxbottomright']  
-    medians = {}
-    if norm == True:
-        for part in box_features:
-            medians[part + '_x'] = D.dlc_data_norm[part].x.median()
-            medians[part + '_y'] = D.dlc_data_norm[part].y.median()
-    else:
-        for part in box_features:
-            medians[part + '_x'] = D.dlc_data[part].x.median()
-            medians[part + '_y'] = D.dlc_data[part].y.median()
-    return medians
 
-def normalise_dlc_data(D):
-    norm_data = D.dlc_data.copy()
-    for part in D.bodyparts:
-        norm_data.loc[:,(part,'x')]=  D.dlc_data[part].x - D.box_medians['poke_x']
-        norm_data.loc[:,(part,'y')]=  D.dlc_data[part].y - D.box_medians['poke_y']
-    setattr(D,'dlc_data_norm',norm_data)
-        #D.dlc_data_norm = norm_data
-    return norm_data
-
-
-
-def restrict_trajectories(D, data, traj_part): 
-    # SET ANY YVLAS PAST THE FOOD MAG TO THE same y as the food mag
-    trajy = data[traj_part].y.copy()
-    trajy[trajy < 0] = 0
-    trajy[trajy > (D.box_norm_medians['r_foodmag_y'] + 
-                   D.box_norm_medians['l_foodmag_y'])/2 ] = (D.box_norm_medians['r_foodmag_y'] +
-                                                       D.box_norm_medians['l_foodmag_y'])/2
-    data.loc[:,(traj_part,'y')] = trajy
-    return data
-                                         
-def track_trials(D, data, extra_time):
-    
-
-    tracked_trials  ={}
-    for trial_no in range(0,len(D.trial_start_frames)):
-        print(trial_no)
-        if D.trial_start_frames.iloc[trial_no] < data.index[-1]:
-            if D.trial_succ_times_med.empty or pd.isnull(D.trial_succ_times_med.iloc[trial_no])[0]:              #if failed trial 
-                tracked_trials[trial_no] = data[D.trial_start_frames.iloc[trial_no]: 
-                                               D.trial_end_frames.iloc[trial_no]]
-               # print(tracked_trials)
-            else:
-                trial_succ_tracking = get_succ_trial_end(D, data, traj_part, 
-                                                         trial_no, extra_time)
-                tracked_trials[trial_no] = trial_succ_tracking
-  
-def get_succ_trial_end(D, data, traj_part,trial_no, extra_time):
-    #define ROI around food mag
-    print('succ')
-    lx = D.box_norm_medians['l_foodmag_x']
-    ly = D.box_norm_medians['l_foodmag_y']
-    ry = D.box_norm_medians['r_foodmag_y']
-    rx = D.box_norm_medians['r_foodmag_x']
-    
-    roi_lx = lx - (np.diff([lx,rx])[0]/2)
-    roi_ly = ly- (np.diff([lx,rx])[0]/2)
-    roi_x_range = [roi_lx, roi_lx +  np.diff([lx,rx])[0]*2]
-    roi_y_range = [roi_ly,roi_ly + np.diff([roi_ly,ly])[0]]
-    
-    trial_data = data[D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]+100][traj_part]
-    in_roi = trial_data.query('x > @roi_x_range[0] and x < @roi_x_range[1] and y > @roi_y_range[0] and y < @roi_y_range[1]' )
-    succ_time = D.trial_succ_times_frames.iloc[trial_no]
-    if in_roi.empty: #if they dont make to food mag within time period just do same as for fail trials
-        succ_tracking = data[ D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]]
-    else:
-        first_mag_entry = in_roi[in_roi.index > succ_time[0]]# .iloc[0].name
-        if first_mag_entry.empty:
-            succ_tracking = data[ D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]]
-        else:
-            succ_tracking = data[D.trial_start_frames.iloc[trial_no]: first_mag_entry.iloc[0].name + int(extra_time)]
-        
-    return succ_tracking
-
-def normalise_and_scale(all_data,all_frame_times,excluded_files):
-    """
-    """
-   
-    for tag in all_data.keys():
-        #if tag not in excluded_files:
-        #print(tag)
-# get median of box features across trials 
-        #N frames after succ to track succ trials 
-        print(tag)
-        box_medians = get_medians(all_data[tag]) # get medians for box features 
-        setattr(all_data[tag], 'box_medians', box_medians)
-        dlc_data_norm = normalise_dlc_data(all_data[tag]) # subtract poke median to normalise data
-        setattr(all_data[tag], 'dlc_data_norm', dlc_data_norm)
-
-        #print( all_data[tag].dlc_data_norm.nose.x[0] )
-        box_norm_medians = get_medians(all_data[tag], norm = True) #get medians of normalised data 
-        setattr(all_data[tag], 'box_norm_medians', box_norm_medians)
-    all_avg_norm_medians = dlc_func.get_avg_norm_medians(all_data) # avg medians for plotting 
-    
-    distances = dlc_func.get_distances(all_data,all_avg_norm_medians)
-    return all_data,distances
-
-def track_all(all_data, traj_part,succ_extra_time,excluded_files,distances,restrict_traj = True):
-    frame_time_in_sec = 0.04# = float(all_frame_times[tag][1])
-    extra_time = np.floor(succ_extra_time/frame_time_in_sec)
-    for tag in all_data.keys():
-        if tag not in excluded_files and tag != 'rat01_14_sal' and tag != 'rat01_14_sal':
-            print(tag)
-            dlc_data_scaled = scale_dlc_data(all_data[tag], traj_part, distances)
-            setattr(all_data[tag], 'dlc_data_scaled', dlc_data_scaled)
-
-            if restrict_traj:
-                all_data[tag].dlc_data_norm = restrict_trajectories(all_data[tag], all_data[tag].dlc_data_norm, traj_part)
-                #setattr(all_data[tag], 'dlc_data_norm', restricted_dlc_data_norm)
-               # print('after restrcit')
-               # print(all_data[tag].dlc_data_norm)
-                all_data[tag].dlc_data_scaled = restrict_trajectories(all_data[tag], all_data[tag].dlc_data_scaled, traj_part)   
-                #setattr(all_data[tag], 'dlc_data_scaled', restricted_dlc_data_scaled)
-            
-            
-            # track_by_trial =  track_trials(all_data[tag], all_data[tag].dlc_data, extra_time)
-            # setattr(all_data[tag], 'track_by_trial', track_by_trial)
-            track_by_trial_norm = track_trials(all_data[tag], all_data[tag].dlc_data_norm, extra_time)
-            setattr(all_data[tag], 'track_by_trial_norm', track_by_trial_norm)
-            # all_data[tag].track_by_trial_scaled = track_trials(all_data[tag], all_data[tag].dlc_data_norm, extra_time)
-    return all_data
-        
-        
-        
-
+mpfc_all_data, distances = dlc_func.normalise_and_scale(mpfc_all_data,all_frame_times,all_mismatched_files)
 
 #%%
-mpfc_all_data, distances = normalise_and_scale(mpfc_all_data,all_frame_times,all_mismatched_files)
-#%%
-mpfc_all_data =track_all(mpfc_all_data, 'head',0.75,all_mismatched_files,distances, restrict_traj = True)
+mpfc_all_data = dlc_func.track_all(mpfc_all_data, all_mismatched_files,distances, restrict_traj = True)
 #%%
 for key in mpfc_all_data.keys():
     print(key)
