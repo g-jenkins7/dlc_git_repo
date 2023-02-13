@@ -195,92 +195,12 @@ if preprocess_data == 'y':
     mpfc_all_data, all_mismatched_files = dlc_func.get_trial_frames(mpfc_all_data,all_onsets,all_frame_times,period)
     #all_mismatched_files = all_mismatched_files + unstable_frame_rate_files
 
-#%%
 
-mpfc_all_data, distances = dlc_func.normalise_and_scale(mpfc_all_data,all_frame_times,all_mismatched_files)
-
-#%%
-mpfc_all_data = dlc_func.track_all(mpfc_all_data, all_mismatched_files,distances, restrict_traj = True)
-#%%
-for key in mpfc_all_data.keys():
-    print(key)
-    print(mpfc_all_data[key].dlc_data_norm.shape)
-#%%
-succ_extra_time = 0.75
-frame_time_in_sec = 0.04#
-extra_time = np.floor(succ_extra_time/frame_time_in_sec)
-
-extra_time = np.floor(succ_extra_time/frame_time_in_sec)
-track_trials(mpfc_all_data['rat01_08_sal'], mpfc_all_data['rat01_08_sal'].dlc_data_norm,extra_time)
-
-#%%
+    mpfc_all_data, distances = dlc_func.normalise_and_scale(mpfc_all_data,all_frame_times,all_mismatched_files)
 
 
-D = test['rat02_13_bmi'].dlc_data_norm
-lx = D.box_norm_medians['l_foodmag_x']
-ly = D.box_norm_medians['l_foodmag_y']
-ry = D.box_norm_medians['r_foodmag_y']
-rx = D.box_norm_medians['r_foodmag_x']
+    mpfc_all_data = dlc_func.track_all(mpfc_all_data, all_mismatched_files,distances, restrict_traj = True)
 
-roi_lx = lx - (np.diff([lx,rx])[0]/2)
-roi_ly = ly- (np.diff([lx,rx])[0]/2)
-roi_x_range = [roi_lx, roi_lx +  np.diff([lx,rx])[0]*2]
-roi_y_range = [roi_ly,roi_ly + np.diff([roi_ly,ly])[0]]
-
-trial_data = data[D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]+100][traj_part]
-in_roi = trial_data.query('x > @roi_x_range[0] and x < @roi_x_range[1] and y > @roi_y_range[0] and y < @roi_y_range[1]' )
-succ_time = D.trial_succ_times_frames.iloc[trial_no]
-if in_roi.empty: #if they dont make to food mag within time period just do same as for fail trials
-    succ_tracking = data[ D.trial_start_frames.iloc[trial_no]: D.trial_end_frames.iloc[trial_no]]
-else:
-    first_mag_entry = in_roi[in_roi.index > succ_time[0]].iloc[0].name
-    succ_tracking = data[D.trial_start_frames.iloc[trial_no]: first_mag_entry + float(extra_time)]   
-    
-    
-#%%
-for tag in all_data.keys():
-    if tag not in excluded_files:
-        print(tag)
-# get median of box features across trials 
-        frame_time_in_sec = 0.04# = float(all_frame_times[tag][1])
-        print(frame_time_in_sec)
-        extra_time = np.floor(succ_extra_time/frame_time_in_sec) #N frames after succ to track succ trials 
-        
-        all_data[tag].box_medians = get_medians(all_data[tag]) # get medians for box features 
-
-        all_data[tag].dlc_data_norm = normalise_dlc_data(all_data[tag]) # subtract poke median to normalise data
-
-        all_data[tag].box_norm_medians = get_medians(all_data[tag], norm = True) #get medians of normalised data 
-
-    all_avg_norm_medians = dlc_func.get_avg_norm_medians(all_data) # avg medians for plotting 
-    
-    distances = dlc_func.get_distances(all_data,all_avg_norm_medians)
-    
-    
-    
-#%%   
-    #find brightness peaks
-    # plot_peaks = 'err_only' # for find brightness peaks function   
-    # all_peaks, all_onsets, mismatch_list_sal = dlc_func.find_brightness_peaks_dspk(all_frame_times,all_avg_brightness,
-    #                                                                               mpfc_all_data,plot_peaks,
-    #                                                                               subject_list, ['bmi'])
-#%%
-    #align data                                                                              
-    period = 5 # time in s after trial iniation to track across
-    mpfc_all_data, all_mismatched_files = dlc_func.get_trial_frames(mpfc_all_data,all_onsets,all_frame_times,period)
-    all_mismatched_files = all_mismatched_files + unstable_frame_rate_files
-    
-    
-    #uncomment to check MED-pc error alignment with brightness peak onsets detected in the video 
-    # check_err =  True
-    # all_peaks = dlc_func.find_brightness_peaks_dspk(all_frame_times,all_avg_brightness,
-    #                                                                               mpfc_all_data,plot_peaks,
-    #                                                                               subject_list, ['sal'],check_err)#,'bmi'])
-    
-    
-    #cut data into trials
-    restricted_traj=True #restricts points outside the box limits eg rearing for head trajectories to within confines of the box floor
-    mpfc_all_data = dlc_func.normalise_and_track(mpfc_all_data,'head',0.75,all_frame_times,all_mismatched_files,restricted_traj)
 
     
 
@@ -288,15 +208,18 @@ for tag in all_data.keys():
                                experiment +
                                '_preproc.p', 'wb')) 
     
-    pickle.dump(all_mismatched_files, open(data_path + 'mismatched_files' + 
+    pickle.dump(all_mismatched_files, open(data_path + 'mismatched_files_' + 
                                experiment +
                                '.p', 'wb')) 
 
-# else:
+else:
     
-#     all_data = pickle.load(open (data_path + 'all_data_' + 
-#                                experiment +
-#                                '_preproc.p', 'rb'))
+    mpfc_all_data = pickle.load(open (data_path + 'all_data_' + 
+                                experiment +
+                                '_preproc.p', 'rb'))
+    all_mismatched_files = pickle.load(open (data_path + 'mismatched_files_' + 
+                                experiment +
+                                '_preproc.p', 'rb'))
 
 #%%  chopping data into trials
 #avg_all_norm_medians = dlc_func.get_avg_norm_medians(all_data)

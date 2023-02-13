@@ -866,6 +866,7 @@ def track_all(all_data ,excluded_files,distances, succ_extra_time = 0.75, traj_p
         dict of dlc data struct - updated with info
 
     """
+    all_track_by_trial = {}
     frame_time_in_sec = 0.04# = float(all_frame_times[tag][1])
     extra_time = np.floor(succ_extra_time/frame_time_in_sec)
     for tag in all_data.keys():
@@ -888,8 +889,9 @@ def track_all(all_data ,excluded_files,distances, succ_extra_time = 0.75, traj_p
             track_by_trial_scaled = track_trials(all_data[tag], all_data[tag].dlc_data_scaled,
                                                  traj_part, extra_time)
             setattr(all_data[tag], 'track_by_trial_scaled', track_by_trial_scaled)
+       
 
-    return all_data
+    return all_data, 
         
         
         
