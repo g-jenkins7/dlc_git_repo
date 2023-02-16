@@ -57,7 +57,11 @@ all_trial_data = pickle.load(open (all_trials_path , 'rb'))
 dlc_file_path = 'C:/Users/George/OneDrive - Nexus365/Documents/GNG - MPFC/DLC_FILES/gongo inactivations/'
 subject_list = list(all_trial_data.animal.unique())
 
-
+all_trial_data.loc[:,'session'] = ['bm'
+                                    if x == 'BMI'
+                                    else 'sal'
+  
+                                    for x in all_trial_data.session]
 
 if collect_beh_data == 'y':
     mpfc_all_data = {}
@@ -67,7 +71,7 @@ if collect_beh_data == 'y':
         all_beh_data = pickle.load(open (session_file_path , 'rb')) 
         all_beh_data['sal'] =all_beh_data.pop('SAL') 
         all_beh_data['bm'] =all_beh_data.pop('BMI') 
-        subject_list = list(all_beh_data['sal'].keys())
+        subject_list = list( all_beh_data['sal'].keys())
         all_data = dlc_func.get_beh_dlc_data(session_list,
                                              subject_list,
                                              all_beh_data,
@@ -86,7 +90,11 @@ elif preprocess_data == 'y':
                                experiment +
                                '.p', 'rb'))
 
-
+#%%
+for subject in subject_list:
+    print(subject)
+    print(all_trial_data.query('animal == @subject').shape)
+    
 #%% VIDEO PROCESSING - ffmpeg timeframe exdtraction and avg brightness data
 
 
@@ -178,7 +186,7 @@ if preprocess_data == 'y':
     
     
     #interpolate
-    mpfc_all_data,valid_points  = dlc_func.interpolate_dlc_data(mpfc_all_data, 2)
+    mpfc_all_data,valid_points  = dlc_func.interpolate_dlc_data(mpfc_all_data, 2, lik_threshold =0.9, jump_threshold=20, min_len=10)
 
 # mismatch_list = []
 # plot_peaks = 'y'
@@ -210,21 +218,24 @@ if preprocess_data == 'y':
     
     pickle.dump(all_mismatched_files, open(data_path + 'mismatched_files_' + 
                                experiment +
-                               '.p', 'wb')) 
+                               '_preproc.p', 'wb')) 
 
 else:
     
     mpfc_all_data = pickle.load(open (data_path + 'all_data_' + 
                                 experiment +
-                                '_preproc.p', 'rb'))
+                                '_preproc_jt20_ml10.p', 'rb'))
     all_mismatched_files = pickle.load(open (data_path + 'mismatched_files_' + 
                                 experiment +
                                 '_preproc.p', 'rb'))
+#%%
+
+
+
 
 #%%  chopping data into trials
 #avg_all_norm_medians = dlc_func.get_avg_norm_medians(all_data)
 #distances = dlc_func.get_distances(all_data,avg_all_norm_medians)
-
 
 
 
@@ -249,109 +260,7 @@ if check_frames == 'yes':
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ANALYSIS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.
-#~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.
-
-trials_to_analyse = ['go1_succ','go1_rtex']#, 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']
-sessions_to_analyse = ['veh','1mg','10mg']
- 
-all_traj_by_trial, all_nose_nan_perc_trials, all_head_nan_perc_trials = dlc_func.collect_traj_by_trialtype(trials_to_analyse,sessions_to_analyse,all_data,all_mismatched_files,scaled = False)
-               
-scaled_all_traj_by_trial, all_nose_nan_perc_trials, all_head_nan_perc_trials = dlc_func.collect_traj_by_trialtype(trials_to_analyse,sessions_to_analyse,all_data,all_mismatched_files,scaled = True)
-
-avg_all_norm_medians = dlc_func.get_avg_norm_medians(all_data)
-
-
-#%%
-trials_to_plot = ['go1_succ','go1_rtex']#, 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']# 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']
-sessions_to_plot = ['veh','1mg','10mg']#['veh','1mg','10mg']
-traj_part = 'head'
-
-by_subject = True
-subj_to_plot =[ 'rat10','rat12','rat24','rat05']
-dlc_func.plot_trajectories(trials_to_plot, sessions_to_plot,traj_part,all_traj_by_trial,avg_all_norm_medians,subj_to_plot,by_subject)
-
-
-#%% individual trial plotting
-
-trials_to_plot = ['go1_succ']# ['go1_succ','go1_rtex', 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']
-sessions_to_plot = ['veh']#,'1mg','10mg']
-num_traj = 10
-plot_by_traj =False
-animals_to_plot = ['06','13']#,'06','07','08','09']#,'11','12','13','14','19','20','21','22','23','24']
-dlc_func.plot_indv_trajectories(trials_to_plot, sessions_to_plot,animals_to_plot,traj_part,all_traj_by_trial,avg_all_norm_medians,num_traj,all_data,plot_by_traj)
-
-
-
- 
-
-
-#%%
-
-#%%
-
-#%%%
-
-#%% PDF - heat maaps
-n_bins = 18
-
-all_pdfs = {}
-for tt in trials_to_plot:
-    trial_type_data= all_traj_by_trial[tt]
-    session_pdfs = {}
-    for s in sessions_to_plot:
-        session_data = trial_type_data[s]
-        trial_pdf ={}
-        for trial in session_data.keys():
-            trial_pdf[trial],_,y_ = np.histogram2d(session_data[trial][traj_part].x,session_data[trial][traj_part].y,
-                                               bins=(np.linspace(-150,150,n_bins+1),np.linspace(-0,200,n_bins+1)),density =True) 
-
-        session_pdfs[s] = trial_pdf
-    all_pdfs[tt] = session_pdfs
-    #using a restricted map where area behaind the magazine is excluded
-
-
-for tt in all_pdfs.keys():
-    for s in all_pdfs[tt].keys():                                    
-        #x =np.mean([trial_pdf[i] for i in trial_numbers])
-        pdf_arr = np.array(list(all_pdfs[tt][s].values()))
-        pdf_mean = pdf_arr.mean(axis=0)
-        pdf_log_mean = np.log(pdf_mean)
-        f, ax = plt.subplots(1,1)
-        ax.imshow(pdf_log_mean, cmap='hot')#,ax=ax)
-        ax.set_title(tt + ' ' + s)
-
-#loggingg the values
-
-#%%
-
-trial_pdf ={}
-for trial in session_data.keys():
-    trial_pdf[trial],_,y_ = np.histogram2d(session_data[trial][traj_part].x,session_data[trial][traj_part].y,
-                                       bins=(np.linspace(-150,150,n_bins+1),np.linspace(-0,200,n_bins+1)),density =True) 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#%% calculating trajectory length - normalise by distance between levers
-
-# CHECK need to crop traj so they end at the food magazine? maybe for correct trials - after succ trigger = go to food mag
-# for incorrect trials  - after 5 sec timeout? 
-traj_distance, mean_traj_distance = dlc_func.calc_traj_length(trials_to_plot,sessions_to_plot,all_traj_by_trial,avg_all_norm_medians,traj_part)
-
+#~
 
 
 #%%

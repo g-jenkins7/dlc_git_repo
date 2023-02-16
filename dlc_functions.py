@@ -20,6 +20,8 @@ import cv2
 import scipy as sp
 from scipy.signal import find_peaks
 from scipy import interpolate
+import scipy.stats as st
+import pingouin as pg 
 
 class DLC_data_struc:
     def __init__(self,tag):
@@ -173,6 +175,7 @@ def get_beh_dlc_data(session_list, subject_list,all_beh_data,all_trial_data,dlc_
             all_data[tag] = DLC_data_struc(tag)
             beh_data = all_beh_data[session][animal]['0']
             trial_data = all_trial_data.query('session == @session and animal == @animal')
+            print(len(trial_data.query('animal == @animal')))
             all_data[tag].trial_data = trial_data
             #get times of events 
             
@@ -734,7 +737,7 @@ def track_trials(D, data, traj_part, extra_time):
 
     tracked_trials  ={}
     for trial_no in range(0,len(D.trial_start_frames)):
-        print(trial_no)
+        #print(trial_no)
         if D.trial_start_frames.iloc[trial_no] < data.index[-1]:
             if D.trial_succ_times_med.empty or pd.isnull(D.trial_succ_times_med.iloc[trial_no])[0]:              #if failed trial 
                 tracked_trials[trial_no] = data[D.trial_start_frames.iloc[trial_no]: 
@@ -773,7 +776,6 @@ def get_succ_trial_end(D, data,trial_no, traj_part, extra_time):
 
     """
     #define ROI around food mag
-    print('succ')
     lx = D.box_norm_medians['l_foodmag_x']
     ly = D.box_norm_medians['l_foodmag_y']
     ry = D.box_norm_medians['r_foodmag_y']
@@ -866,7 +868,6 @@ def track_all(all_data ,excluded_files,distances, succ_extra_time = 0.75, traj_p
         dict of dlc data struct - updated with info
 
     """
-    all_track_by_trial = {}
     frame_time_in_sec = 0.04# = float(all_frame_times[tag][1])
     extra_time = np.floor(succ_extra_time/frame_time_in_sec)
     for tag in all_data.keys():
@@ -880,18 +881,15 @@ def track_all(all_data ,excluded_files,distances, succ_extra_time = 0.75, traj_p
                 all_data[tag].dlc_data_scaled = restrict_trajectories(all_data[tag], all_data[tag].dlc_data_scaled, traj_part)   
             
             
-            track_by_trial =  track_trials(all_data[tag], all_data[tag].dlc_data, 
+            all_data[tag].track_by_trial =  track_trials(all_data[tag], all_data[tag].dlc_data, 
                                            traj_part, extra_time)  
-            setattr(all_data[tag], 'track_by_trial', track_by_trial)
-            track_by_trial_norm = track_trials(all_data[tag], all_data[tag].dlc_data_norm, 
+            all_data[tag].track_by_trial_norm = track_trials(all_data[tag], all_data[tag].dlc_data_norm, 
                                                traj_part, extra_time) 
-            setattr(all_data[tag], 'track_by_trial_norm', track_by_trial_norm)
-            track_by_trial_scaled = track_trials(all_data[tag], all_data[tag].dlc_data_scaled,
+            all_data[tag].track_by_trial_scaled = track_trials(all_data[tag], all_data[tag].dlc_data_scaled,
                                                  traj_part, extra_time)
-            setattr(all_data[tag], 'track_by_trial_scaled', track_by_trial_scaled)
        
 
-    return all_data, 
+    return all_data 
         
         
         
@@ -1133,7 +1131,6 @@ def plot_trajectories(trials_to_plot, sessions_to_plot,traj_part,all_traj_by_tri
     import dlc_functions as dlc_func
     import matplotlib.patches as mpatches
     traj_colors = ['grey','limegreen', 'darkgreen']
-    indv_colors = ['darkred','orangered','goldenrod','olive','lawngreen','forestgreen','mediumaquamarine','cyan','dodgerblue','navy','rebeccapurple','plum','saddlebrown','gray','black']
     all_patches ={}
     for tt in range(0,len(trials_to_plot)):
         if len(sessions_to_plot) > 1:
@@ -1151,7 +1148,7 @@ def plot_trajectories(trials_to_plot, sessions_to_plot,traj_part,all_traj_by_tri
             if by_subject:
                 all_patches[s] = []
                 sub_counter =0
-                indv_subjs = ['rat' + x.split('rat',1)[1][0:2] for x in session_data.keys()]  
+                indv_subjs = [x.split(sessions_to_plot[s],1)[0][0:-1] for x in session_data.keys()]  
                 print(indv_subjs)
                 if subj_to_plot == 'all':
                     indv_subjs_filt = indv_subjs
@@ -1159,6 +1156,8 @@ def plot_trajectories(trials_to_plot, sessions_to_plot,traj_part,all_traj_by_tri
                     indv_subjs_filt = [ x for x in indv_subjs if x in subj_to_plot]
                     
                 indv_subjs_filt_set = set(indv_subjs_filt)
+                indv_colors = plt.cm.rainbow(np.linspace(0, 1, len(indv_subjs_filt_set)))
+
                 for subj in indv_subjs_filt_set:
                     subj_data = [x for x in session_data.keys() if subj in x ]
                     for trial in subj_data:
@@ -1173,7 +1172,9 @@ def plot_trajectories(trials_to_plot, sessions_to_plot,traj_part,all_traj_by_tri
                     data_x = session_data[trial][traj_part].x
                     data_y = session_data[trial][traj_part].y
                     axs[s].plot(data_x,data_y,traj_colors[s], alpha=0.3)
-            axs[s].set_title(sessions_to_plot[s],fontsize =20)
+            axs[s].set_title(sessions_to_plot[s] + ' '
+                             + trials_to_plot[tt]
+                             ,fontsize =20)
             dlc_func.plotbox(axs[s], avg_all_norm_medians)
             plt.suptitle(trials_to_plot[tt],fontsize =26, y=1.1)
             if by_subject:
@@ -1190,13 +1191,14 @@ def plot_indv_trajectories(trials_to_plot,sessions_to_plot,animals_to_plot,
         for s in range(0,len(sessions_to_plot)):
             session_data = trial_type_data[sessions_to_plot[s]]
             for animal in animals_to_plot:
-                animal_tag = 'rat'+animal
+                animal_tag = 'rat'+ animal
                 session_trials = [x for x in list(session_data.keys()) if animal_tag in x]
                 counter = 0
                 tag = animal_tag + '_'+ sessions_to_plot[s]
                 if not plot_by_traj:
                     fig,ax = plt.subplots(1,1)
-                    plt.title(animal_tag +' ' + sessions_to_plot[s] )
+                    plt.title(animal_tag +' ' 
+                              +trials_to_plot[tt] + sessions_to_plot[s])
 
                 for trial in  session_trials:
                     counter +=1
@@ -1208,7 +1210,8 @@ def plot_indv_trajectories(trials_to_plot,sessions_to_plot,animals_to_plot,
                                 plt.title(all_occ_ords[trials_to_plot[tt]][sessions_to_plot[s]][trial])
                             else:
                                 
-                                plt.title(trial)
+                                plt.title(trial + ' '
+                                          + trials_to_plot[tt])
                             
                         data_x = session_data[trial][traj_part].x
                         data_y = session_data[trial][traj_part].y
@@ -1315,3 +1318,276 @@ def clean_and_interpolate_dlc_data(criterion, all_data):
     
     return all_data, confidence_prop
 
+def get_occupancy(all_traj_by_trial,traj_part):  
+    all_occ_ords = {}
+    all_occ_traj = {}
+    bin_2d_dict = {}
+    bin_edge_x = [-150.,  -50.,   50.,  150.]
+    bin_edge_y = [  0.        ,  66.66666667, 133.33333333, 200.        ]
+    for tt in all_traj_by_trial.keys():
+        bin_2d_dict[tt] = {}
+        all_occ_ords[tt] = {}
+        all_occ_traj[tt] = {}
+        for s in all_traj_by_trial[tt].keys():
+            session_data = all_traj_by_trial[tt][s]
+            bin_2d_dict[tt][s] ={}
+            all_occ_ords[tt][s] = {}
+            all_occ_traj[tt][s] = {}
+            for trial in session_data.keys():
+                b = st.binned_statistic_2d(session_data[trial][traj_part].x,
+                                                           session_data[trial][traj_part].y,
+                                                          None,'count',
+                                                          bins = [bin_edge_x, bin_edge_y])
+                if all(val in [6,7,8,11,12,13,16,17,18] for val in b.binnumber) == False:
+                    print(trial)  
+                else:
+                    print('*')
+                bin_2d_dict[tt][s][trial] = b
+                all_occ_ords[tt][s][trial] =  np.hstack([b.binnumber[0] , [b.binnumber[val] 
+                                                       for val in range(1,len(b.binnumber)) 
+                                                       if b.binnumber[val] != b.binnumber[val-1]]])
+                all_occ_traj[tt][s][trial] = b.binnumber
+    return all_occ_ords, all_occ_traj
+
+
+
+    
+            
+class occupancy_ord_struc:
+    def __init__(self, occ_ord_dict, occ_traj_dict, conditions, mismatched_files):
+        self.occ_dict = occ_ord_dict #dict with all square occupany orders for all trials (flattened)
+        self.traj_dict = occ_traj_dict
+        self.conditions = conditions #eg veh dose1 dose2
+        self.all_keys = list(self.occ_dict.keys())
+        self.animals = list(set([k[k.find('rat') :k.rfind('_')]
+                for k in self.all_keys]))
+        self.mismatched_files = mismatched_files
+        self.palette = ['darkgray','yellowgreen', 'forestgreen'] # palette for plotting
+        
+    def no_lever_occ(self,k):
+        # checks if neither lever was entered on that trial
+        if 6 not in self.occ_dict[k][0] and 16 not in self.occ_dict[k][0]:
+            return k
+        
+    def small_lever_occ(self,k):
+        # checks if small lever was entered on that trials
+          if 6 in self.occ_dict[k][0]:
+              return k
+          
+    def large_lever_occ(self,k):
+        #checks if large lever was entered on that trial 
+        if 16 in self.occ_dict[k][0]:
+               return k
+      
+    def find_proportions(self,trial_type,func):
+        '''
+        finds propotions of trials of trial type x (eg go small success)
+        that have entry into square defined by func(eg no_lever_occ)
+        for each animal
+        
+        if no trials for that type exists for that animal records a nan 
+        '''
+        f = getattr(self,func)
+        df = pd.DataFrame(columns = self.conditions)
+        for cond in self.conditions:
+            for animal in self.animals:
+                animal_cond_keys = [k for k in self.all_keys 
+                                    if trial_type in k 
+                                    and cond in k 
+                                    and animal in k]
+                filt_keys = [f(k) for k in animal_cond_keys
+                             if f(k) is not None]
+                print(animal_cond_keys)
+                if len(filt_keys) > 0:
+                    df.loc[animal,cond] = len(filt_keys)/len(animal_cond_keys)
+                elif animal + '_' + cond in self.mismatched_files:
+                    df.loc[animal,cond] = np.nan
+                elif len(animal_cond_keys) == 0:
+                    df.loc[animal,cond] = np.nan
+                else:
+                    df.loc[animal,cond] = 0
+        self.prop_df = df
+        self.prop_df_title = (trial_type + ' ' + func)
+        return df
+    
+    
+    def plot_all_proportions(self, filt):
+        
+        '''
+        finds and plots the proportion of trials for all trial types that 
+        have entry into the sqaure defined by filt (eg correct lever square)
+        '''
+        
+        filt_dict = {'corr_lever': ['small_lever_occ','large_lever_occ'],
+                     'wrong_lever': ['large_lever_occ','small_lever_occ'], 
+                     'no_lever': ['no_lever_occ','no_lever_occ']}
+        
+        
+        output_df = pd.DataFrame()
+        for trial_type in  ['go1_succ','go1_rtex', 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']:
+            if 'go1' in trial_type:
+                df = self.find_proportions(trial_type, filt_dict[filt][0])
+                df.loc[:,'trial_type'] = trial_type
+                output_df = pd.concat([output_df, df])
+            else:
+                df = self.find_proportions(trial_type, filt_dict[filt][1])
+                df.loc[:,'trial_type'] = trial_type
+                output_df = pd.concat([output_df, df])
+          
+        output_df.loc[:,'rew_size'] =  [x[2] for x in output_df.trial_type]
+        output_df.loc[:,'trial_type'] =  [x[4:] for x in output_df.trial_type]
+        
+        output_dfm = output_df.melt(id_vars=['trial_type', 'rew_size'])
+        output_dfm.loc[:,'value'] = output_dfm.value.astype('float')
+        x = sns.catplot(kind = 'bar', data = output_dfm, x = 'trial_type',
+                        y = 'value', hue = 'variable', row = 'rew_size', 
+                        palette = self.palette, alpha = 0.7)
+        x.set_axis_labels("Dose", "Proportion of trials")
+        x.fig.suptitle(filt+' sqaure entry', x = 0.75)
+        x.fig.set_size_inches(8.5, 5.5)
+        x.set(ylim=(0, 1))
+
+        setattr(self, filt + '_df', output_df)
+        return output_df, output_dfm
+            
+    def test_proportions(self, filt, trial_type, plot= False):      
+        '''
+        performs anova on results of "plot all proportios"
+        Parameters
+        ----------
+        filt : str
+            condition to be test eg corr_lever .
+        trial_type : str
+            .
+        plot : TYPE, optional
+            plots a bar chart
+        Returns
+        -------
+        anova : TYPE
+            DESCRIPTION.
+
+        '''
+        df = getattr(self, filt + '_df')
+        df.loc[:,'subj'] = df.index
+        anova_dfm = df.query('trial_type == @trial_type').melt(id_vars = ['trial_type',
+                                                               'rew_size',
+                                                               'subj'],
+                                                    var_name = 'dose', 
+                                                    value_name ='prop_of_trials')
+        anova_dfm.loc[:,'prop_of_trials'] = anova_dfm.prop_of_trials.astype('float')
+        anova_dfm.loc[anova_dfm['prop_of_trials'] == np.nan] = 0 # nans are no errors of that tyep - so prop stioll should be zero? 
+        anova = pg.rm_anova(data = anova_dfm, dv = 'prop_of_trials', 
+                            within = ['rew_size','dose'],
+                            subject = 'subj', detailed=True, 
+                            effsize="np2")
+        print(anova)
+        if plot == True:
+            fig, axs = plt.subplots(1,2)
+            anova_dfm.rew_size = anova_dfm.rew_size.astype('int')
+            for r in range(0,2):
+                sns.barplot(data = anova_dfm.query('rew_size == @r+1'),
+                            x = 'dose',
+                            y = 'prop_of_trials', 
+                            palette = self.palette,
+                            ax = axs[r])
+                sns.stripplot(data = anova_dfm.query('rew_size == @r+1'),
+                             x = 'dose',
+                             y = 'prop_of_trials', 
+                             ax = axs[r], 
+                             color = 'k')
+                axs[r].set_title('Reward = ' + str(r+1))
+                sns.despine()
+                fig.suptitle(f'Prop of {filt} on {trial_type}')
+        return anova
+    
+    def get_1st_area(self, key): 
+        
+        # drop all apart from levers and foodmag 
+        rel_areas = [x for x in self.occ_dict[key][0]
+                     if x in [6, 16, 13]]
+        if len(rel_areas) > 0:
+            val = rel_areas[0]
+        else: 
+            val = 100
+        return val 
+    
+    def find_1st_areas(self, plot = False):
+        go1_map = {6: 'corr_lever',
+                   16: 'wrong_lever',
+                   13: 'food_mag',
+                   100: 'no_entry'}
+
+        go2_map = {6: 'wrong_lever',
+                   16: 'corr_lever',
+                   13: 'food_mag',
+                   100: 'no_entry'}
+        
+        df = pd.DataFrame(columns = ['corr_lever','wrong_lever','food_mag',
+                                     'no_entry','trial_type','cond'])
+        obs = 0
+        for trial in ['go1_succ','go1_rtex', 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']:
+            for cond in self.conditions:
+                for animal in self.animals:
+                    if animal + '_' + cond not in self.mismatched_files:
+                        animal_cond_keys = [k for k in self.all_keys 
+                                            if trial in k 
+                                            and cond in k 
+                                            and animal in k]
+                        list_1st_area = pd.DataFrame([self.get_1st_area(x) for x in animal_cond_keys], columns =['area'])
+                        if 'go1' in trial:
+                            list_1st_area['area'] = list_1st_area['area'].map(go1_map)
+                        else:
+                            list_1st_area['area'] = list_1st_area['area'].map(go2_map)
+                        list_1st_area['area'] = list_1st_area['area'].astype('category')
+                        list_1st_area['area'] = list_1st_area['area'].cat.set_categories(['corr_lever','wrong_lever',
+                                                                                          'food_mag','no_entry'])
+                        df.loc[obs,['corr_lever','wrong_lever',
+                                    'food_mag','no_entry']] = list_1st_area['area'].value_counts(normalize = True)
+                        df.loc[obs,'trial_type'] = trial[4:]
+                        df.loc[obs,'cond'] = cond
+                        df.loc[obs,'animal'] = animal
+                        df.loc[obs,'rew_size'] = trial[2]
+                        obs += 1
+        if plot == True:
+            for trial_type in ['succ', 'rtex','wronglp']:
+                plot_df = df.query('trial_type == @trial_type')
+                plot_dfm = plot_df.melt(id_vars = ['trial_type','cond',
+                                                   'rew_size','animal'])
+                plot_dfm.loc[:,'value'] = plot_dfm.value.astype('float')
+                x = sns.catplot(kind = 'bar', data = plot_dfm, 
+                                x = 'trial_type',y = 'value', 
+                                hue = 'cond', row = 'rew_size',
+                                col = 'variable', palette = self.palette, 
+                                alpha = 0.7)
+                x.fig.suptitle(trial_type)
+        return df
+    
+    def get_num_np_frames(self,k):
+        t = self.occ_traj[k][0]
+        count = 0 
+        for i in range(0,len(t)):
+            if t[i] == 11:
+                count += 1
+            else:
+                break
+        return count
+                    
+    def get_nosepoke_times(self):
+        df = pd.DataFrame()
+        obs = 0
+        for trial in ['go1_succ','go1_rtex', 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']:
+            for cond in self.conditions:
+                for animal in self.animals:
+                    if animal + '_' + cond not in self.mismatched_files:
+                        animal_cond_keys = [k for k in self.all_keys 
+                                            if trial in k 
+                                            and cond in k 
+                                            and animal in k]
+                        nosepoke_time_s =  np.mean([get_num_np_frames(k) for k in animal_cond_keys]) * 0.04
+                        df.loc[obs,'avg_np_time'] = nosepoke_time_s
+                        df.loc[obs,'trial_type'] = trial[4:]
+                        df.loc[obs,'cond'] = cond
+                        df.loc[obs,'animal'] = animal
+                        df.loc[obs,'rew_size'] = trial[2]
+                        obs += 1
+        return df
