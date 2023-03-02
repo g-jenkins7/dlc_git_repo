@@ -958,6 +958,7 @@ def frame_checker(tag_list,vid_directory,frame_list,frame_range,all_data,method,
     for tag in tag_list:
         files = os.listdir(vid_directory)
         video_name = [x for x in files if tag in x and '.mp4' in x or '.avi' in x ][0]
+        print(video_name)
         os.chdir(vid_directory)
         cap = cv2.VideoCapture(video_name)
         if manual:

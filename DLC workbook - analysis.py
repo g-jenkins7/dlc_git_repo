@@ -23,8 +23,17 @@ from scipy import interpolate
 import scipy.stats as st
 import pingouin as pg 
 
-
 #%% functions
+
+def adjust_lightness(color, amount=0.5):
+    import matplotlib.colors as mc
+    import colorsys
+    try:
+        c = mc.cnames[color]
+    except:
+        c = color
+    c = colorsys.rgb_to_hls(*mc.to_rgb(c))
+    return colorsys.hls_to_rgb(c[0], max(0, min(1, amount * c[1])), c[2])
 
 def get_occupancy(all_traj_by_trial,traj_part):  
     all_occ_ords = {}
@@ -158,12 +167,22 @@ class occupancy_ord_struc:
           
         output_df.loc[:,'rew_size'] =  [x[2] for x in output_df.trial_type]
         output_df.loc[:,'trial_type'] =  [x[4:] for x in output_df.trial_type]
-        
+        scatter_palette = [adjust_lightness(x) for x in self.palette]
         output_dfm = output_df.melt(id_vars=['trial_type', 'rew_size'])
         output_dfm.loc[:,'value'] = output_dfm.value.astype('float')
-        x = sns.catplot(kind = 'bar', data = output_dfm, x = 'trial_type',
-                        y = 'value', hue = 'variable', row = 'rew_size', 
-                        palette = self.palette, alpha = 0.7)
+        x = sns.FacetGrid(output_dfm,
+                          row = 'rew_size',
+                           margin_titles =True )
+        x.map_dataframe(sns.barplot,x="trial_type",
+                        y="value",hue='variable'
+                       , palette =self.palette,
+                       errorbar = None)
+        x.map_dataframe(sns.stripplot,x="trial_type", 
+                        y="value", hue='variable',
+                          alpha= 0.6 ,palette = scatter_palette,
+                          dodge=True, jitter=False)
+        
+   
         x.set_axis_labels("Dose", "Proportion of trials")
         x.fig.suptitle(filt+' sqaure entry', x = 0.75)
         x.fig.set_size_inches(8.5, 5.5)
@@ -172,6 +191,43 @@ class occupancy_ord_struc:
         setattr(self, filt + '_df', output_df)
         return output_df, output_dfm
             
+    
+    # '''
+    # finds and plots the proportion of trials for all trial types that 
+    # have entry into the sqaure defined by filt (eg correct lever square)
+    # '''
+    
+    # filt_dict = {'corr_lever': ['small_lever_occ','large_lever_occ'],
+    #              'wrong_lever': ['large_lever_occ','small_lever_occ'], 
+    #              'no_lever': ['no_lever_occ','no_lever_occ']}
+    
+    
+    # output_df = pd.DataFrame()
+    # for trial_type in  ['go1_succ','go1_rtex', 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']:
+    #     if 'go1' in trial_type:
+    #         df = self.find_proportions(trial_type, filt_dict[filt][0])
+    #         df.loc[:,'trial_type'] = trial_type
+    #         output_df = pd.concat([output_df, df])
+    #     else:
+    #         df = self.find_proportions(trial_type, filt_dict[filt][1])
+    #         df.loc[:,'trial_type'] = trial_type
+    #         output_df = pd.concat([output_df, df])
+      
+    # output_df.loc[:,'rew_size'] =  [x[2] for x in output_df.trial_type]
+    # output_df.loc[:,'trial_type'] =  [x[4:] for x in output_df.trial_type]
+    
+    # output_dfm = output_df.melt(id_vars=['trial_type', 'rew_size'])
+    # output_dfm.loc[:,'value'] = output_dfm.value.astype('float')
+    # x = sns.catplot(kind = 'bar', data = output_dfm, x = 'trial_type',
+    #                 y = 'value', hue = 'variable', row = 'rew_size', 
+    #                 palette = self.palette, alpha = 0.7)
+    # x.set_axis_labels("Dose", "Proportion of trials")
+    # x.fig.suptitle(filt+' sqaure entry', x = 0.75)
+    # x.fig.set_size_inches(8.5, 5.5)
+    # x.set(ylim=(0, 1))
+
+    # setattr(self, filt + '_df', output_df)
+    # return output_df, output_dfm
     def test_proportions(self, filt, trial_type, plot= False):      
         '''
         performs anova on results of "plot all proportios"
@@ -204,19 +260,19 @@ class occupancy_ord_struc:
                             effsize="np2")
         print(anova)
         if plot == True:
-            fig, axs = plt.subplots(1,2)
+            fig, axs = plt.subplots(1,2, sharey =True, figsize =(4,5))
             anova_dfm.rew_size = anova_dfm.rew_size.astype('int')
             for r in range(0,2):
                 sns.barplot(data = anova_dfm.query('rew_size == @r+1'),
                             x = 'dose',
                             y = 'prop_of_trials', 
                             palette = self.palette,
-                            ax = axs[r])
+                            ax = axs[r], errorbar = None)
                 sns.stripplot(data = anova_dfm.query('rew_size == @r+1'),
                              x = 'dose',
                              y = 'prop_of_trials', 
                              ax = axs[r], 
-                             color = 'k')
+                             color = 'k', alpha =0.6)
                 axs[r].set_title('Reward = ' + str(r+1))
                 sns.despine()
                 fig.suptitle(f'Prop of {filt} on {trial_type}')
@@ -276,11 +332,18 @@ class occupancy_ord_struc:
                 plot_dfm = plot_df.melt(id_vars = ['trial_type','cond',
                                                    'rew_size','animal'])
                 plot_dfm.loc[:,'value'] = plot_dfm.value.astype('float')
-                x = sns.catplot(kind = 'bar', data = plot_dfm, 
-                                x = 'trial_type',y = 'value', 
-                                hue = 'cond', row = 'rew_size',
-                                col = 'variable', palette = self.palette, 
-                                alpha = 0.7)
+                x = sns.FacetGrid(plot_dfm, col = 'rew_size', row = 'variable') 
+                
+                x.map_dataframe(sns.barplot,x="trial_type", y="value",
+                                hue='cond', errorbar = None,
+                                palette = ecb_occ_analysis.palette)
+                
+                x.map_dataframe(sns.stripplot,x="trial_type", y="value",
+                                hue='cond',alpha= 0.6 ,color = 'black',
+                                dodge=True, jitter=False)
+              
+                                
+            
                 x.fig.suptitle(trial_type)
         return df
     
@@ -329,7 +392,7 @@ all_mismatched_files = pickle.load(open (data_path + 'mismatched_files' + experi
 all_mismatched_files = all_mismatched_files + ['rat20_1mg']
 
 extract_traj = True
-plot_traj = False
+plot_traj = True
 plot_heat_maps = True
 
 #%%
@@ -360,7 +423,7 @@ if plot_traj:
 
 #%% individual trial plotting
 
-    num_traj = 10
+    num_traj = 1
     plot_by_traj =False # single traj per fig
     animals_to_plot = ['06','13']#,'06','07','08','09']#,'11','12','13','14','19','20','21','22','23','24']
     dlc_func.plot_indv_trajectories(trials_to_plot, sessions_to_plot,animals_to_plot,traj_part,all_traj_by_trial,avg_all_norm_medians,num_traj,all_data,plot_by_traj)
@@ -385,7 +448,7 @@ if plot_heat_maps:
                 #                                    bins=(np.linspace(-150,150,n_bins+1),np.linspace(-0,200,n_bins+1)))#,density =True) 
                 density,_,y_ = np.histogram2d(session_data[trial][traj_part].x,session_data[trial][traj_part].y,
                                                     bins=(np.linspace(-150,150,n_bins+1),np.linspace(-0,200,n_bins+1)),density =True) 
-                all_pdfs[tt][s][trial] = density/density.sum() # sum across all bins =  1
+               # all_pdfs[tt][s][trial] = density/density.sum() # sum across all bins =  1
         #using a restricted map where area behaind the magazine is excluded
 #%%      
 
@@ -572,13 +635,27 @@ if plot == True:
         plot_df = df.query('trial_type == @trial_type')
         plot_dfm = plot_df.melt(id_vars = ['trial_type','cond',
                                            'rew_size','animal'])
-        x = sns.catplot(kind = 'bar', data = plot_dfm, 
-                        x = 'trial_type',y = 'value', 
-                        hue = 'cond', row = 'rew_size',
-                        col = 'variable', palette = ecb_occ_analysis.palette, 
-                        alpha = 0.7)
-        x.fig.suptitle(trial_type)
+        x = sns.FacetGrid(plot_dfm, col="variable", row = 'rew_size',
+                           margin_titles =False )
+        x.map_dataframe(sns.barplot,x="trial_type", y="value",
+                        hue='cond', errorbar = None,
+                        palette = ecb_occ_analysis.palette)
+        x.map_dataframe(sns.stripplot,x="trial_type", y="value",
+                        hue='cond',
+                       
+                          alpha= 0.6 ,color = 'black',
+                          dodge=True, jitter=False)
         
+        x.fig.subplots_adjust(top=0.9) # adjust the Figure in rp
+
+        x.fig.suptitle(trial_type)
+#%%
+rtex_np_zone = df.query('trial_type == "rtex"')
+anova = pg.rm_anova(data = rtex_np_zone, dv = 'avg_np_time', 
+                      within = ['rew_size','cond'],
+                      subject = 'animal', detailed=True, 
+                      effsize="np2")
+
 #%%
 fig, ax = plt.subplots(1,1)
 dfm=  df.melt(id_vars = ['trial_type','cond',

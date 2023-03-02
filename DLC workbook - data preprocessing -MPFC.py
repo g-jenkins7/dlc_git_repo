@@ -38,8 +38,8 @@ from scipy import interpolate
 
 
 #%%
-collect_beh_data = 'n'
-process_all_videos = 'n'
+collect_beh_data = 'y'
+process_all_videos = 'y'
 preprocess_data = 'y'
 
 #%% COLLECTING BEHAVIOURAL DATA 
@@ -132,7 +132,17 @@ else:
     print(frame_rate_test.loc[frame_rate_test['avg'] != 0.04])
     unstable_frame_rate_files = list(frame_rate_test.loc[frame_rate_test['avg']  !=  0.04].index)
     
+#%% REMOVING COHORT 2 FILES 
 
+
+# all_frame_times = pickle.load( open(dlc_file_path + '/all_frametimes_dlc_mpfc_pre_file_rename.p', 'rb')) 
+# all_avg_brightness = pickle.load( open(dlc_file_path + '/all_avg_brightness_dlc_mpfc_pre_file_rename.p', 'rb')) 
+# cohort2 = [x for x in list(all_frame_times.keys()) if 'rat02' in x]
+# for f in cohort2:
+#     del all_frame_times[f]
+#     del all_avg_brightness[f]
+# pickle.dump(all_frame_times, open(dlc_file_path+ '/all_frametimes_dlc_mpfc.p', 'wb'))
+# pickle.dump(all_avg_brightness, open(dlc_file_path+ '/all_avg_brightness_dlc_mpfc.p', 'wb'))
 
 #%% interpolate DLC data, find brightness peaks from the video - align to MED-file errors and convert MED events into frames
 

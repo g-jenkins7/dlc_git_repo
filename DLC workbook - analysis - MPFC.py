@@ -50,8 +50,8 @@ all_mismatched_files = all_mismatched_files + ['rat01_14_sal']
 
 if extract_traj:
     trials_to_analyse = ['go1_succ','go1_rtex', ]#'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']
-    sessions_to_analyse = ['bmi','sal']
-    #not looking at nan %
+    sessions_to_analyse = ['bmi','sal']  #not looking at nan %
+  
     all_traj_by_trial, _,= dlc_func.collect_traj_by_trialtype(trials_to_analyse, sessions_to_analyse,
                                                               mpfc_all_data, all_mismatched_files, scaled = False)
                  
@@ -62,8 +62,8 @@ if extract_traj:
     
 #%% plot all trials
 if plot_traj:
-    trials_to_plot = ['go1_succ','go1_rtex',]# 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']# 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']
-    sessions_to_plot =  ['bmi','sal']
+    trials_to_plot = ['go1_succ','go1_rtex']# 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']# 'go1_wronglp','go2_succ', 'go2_rtex', 'go2_wronglp']
+    sessions_to_plot =  ['sal', 'bmi']
     traj_part = 'head'
     by_subject = True
     #subj_to_plot ='all'
@@ -80,20 +80,33 @@ if plot_traj:
     
 #%%
 
-num_traj = 10
+num_traj = 50
 plot_by_traj =True # single traj per fig
-animals_to_plot = ['02_05']#,'02_16','02_17','02_11']#,'06','07','08','09']#,'11','12','13','14','19','20','21','22','23','24']
+animals_to_plot = ['02_02']#,'02_16','02_17','02_11']#,'06','07','08','09']#,'11','12','13','14','19','20','21','22','23','24']
 dlc_func.plot_indv_trajectories(trials_to_plot, sessions_to_plot,animals_to_plot,traj_part,all_traj_by_trial,avg_all_norm_medians,num_traj,mpfc_all_data,plot_by_traj)
 
 #%%
 
+f, ax = plt.subplots(1,1) 
 
+a = flat_traj['go1_succ_sal_rat02_02_sal97'][0]
 
-
-
-
+plt.plot(a['head'].x,a['head'].y)
+dlc_func.plotbox(ax, mpfc_all_data['rat02_02_sal'].box_norm_medians)
 #%%
 
+check_frames  = 'yes'
+start_frame = 0
+end_frame = 200
+frame_step = 5
+frame_range = [start_frame,end_frame,frame_step]
+
+manual = True
+if check_frames == 'yes':
+    tag_list = ['rat02_02_sal']
+    vid_directory = 'C:/Users/George/OneDrive - Nexus365/Documents/GNG - MPFC/DLC_VIDEOS' 
+    dlc_func.frame_checker(tag_list,vid_directory,[42860],frame_range,mpfc_all_data,'frame',manual)
+     
 
 #%% individual trial plotting
 
@@ -217,8 +230,8 @@ prob want some kind of restriction- so that have to be in segment for more than 
 
 
 plot_occ_checks = False
-all_occ_ords, all_occ_traj = get_occupancy(all_traj_by_trial,'head')
-all_occ_ords_scal = get_occupancy(scaled_all_traj_by_trial,'head')
+all_occ_ords, all_occ_traj = dlc_func.get_occupancy(all_traj_by_trial,'head')
+all_occ_ords_scal = dlc_func.get_occupancy(scaled_all_traj_by_trial,'head')
 
 
 if plot_occ_checks:
@@ -252,7 +265,7 @@ if plot_occ_checks:
 #%%
 flat_occ_ords = pd.json_normalize(all_occ_ords, sep='_').to_dict()
 flat_occ_traj =  pd.json_normalize(all_occ_traj, sep='_').to_dict()
-ecb_occ_analysis = occupancy_ord_struc(flat_occ_ords,flat_occ_traj,['veh','1mg','10mg'], all_mismatched_files)
+ecb_occ_analysis = dlc_func.occupancy_ord_struc(flat_occ_ords,flat_occ_traj,['veh','1mg','10mg'], all_mismatched_files)
 
 
 #%%
